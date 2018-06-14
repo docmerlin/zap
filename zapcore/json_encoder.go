@@ -125,13 +125,8 @@ func (enc *jsonEncoder) AddInt64(key string, val int64) {
 }
 
 func (enc *jsonEncoder) AddReflected(key string, obj interface{}) error {
-	marshaled, err := json.Marshal(obj)
-	if err != nil {
-		return err
-	}
 	enc.addKey(key)
-	_, err = enc.buf.Write(marshaled)
-	return err
+	return enc.AppendReflected(obj)
 }
 
 func (enc *jsonEncoder) OpenNamespace(key string) {
