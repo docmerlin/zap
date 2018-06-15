@@ -32,8 +32,9 @@ import (
 	"go.uber.org/zap/internal/bufferpool"
 )
 
-// For JSON-escaping; see jsonEncoder.safeAddString below.
+// For JSON-escaping; see jsonEncoder.{safeAddString and addEscape} below.
 const _hex = "0123456789abcdef"
+const _esc = `\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\`
 
 var _jsonPool = sync.Pool{New: func() interface{} {
 	return &jsonEncoder{}
@@ -56,6 +57,7 @@ type jsonEncoder struct {
 	buf            *buffer.Buffer
 	spaced         bool // include spaces after colons and commas
 	openNamespaces int
+	quoteLevel     int
 }
 
 // NewJSONEncoder creates a fast, low-allocation JSON encoder. The encoder
@@ -174,7 +176,9 @@ func (enc *jsonEncoder) AppendBool(val bool) {
 func (enc *jsonEncoder) AppendByteString(val []byte) {
 	enc.addElementSeparator()
 	enc.addQuote()
+	enc.quoteLevel++
 	enc.safeAddByteString(val)
+	enc.quoteLevel--
 	enc.addQuote()
 }
 
@@ -183,12 +187,14 @@ func (enc *jsonEncoder) AppendComplex128(val complex128) {
 	// Cast to a platform-independent, fixed-size type.
 	r, i := float64(real(val)), float64(imag(val))
 	enc.addQuote()
+	enc.quoteLevel++
 	// Because we're always in a quoted string, we can use strconv without
 	// special-casing NaN and +/-Inf.
 	enc.buf.AppendFloat(r, 64)
 	enc.buf.AppendByte('+')
 	enc.buf.AppendFloat(i, 64)
 	enc.buf.AppendByte('i')
+	enc.quoteLevel--
 	enc.addQuote()
 }
 
@@ -213,14 +219,20 @@ func (enc *jsonEncoder) AppendReflected(val interface{}) error {
 		return err
 	}
 	enc.addElementSeparator()
-	_, err = enc.buf.Write(marshaled)
+	if enc.quoteLevel > 0 {
+		enc.safeAddByteString(marshaled)
+	} else {
+		_, err = enc.buf.Write(marshaled)
+	}
 	return err
 }
 
 func (enc *jsonEncoder) AppendString(val string) {
 	enc.addElementSeparator()
 	enc.addQuote()
+	enc.quoteLevel++
 	enc.safeAddString(val)
+	enc.quoteLevel--
 	enc.addQuote()
 }
 
@@ -359,12 +371,27 @@ func (enc *jsonEncoder) closeOpenNamespaces() {
 }
 
 func (enc *jsonEncoder) addEscape(seq ...byte) {
-	enc.buf.AppendByte('\\')
+	n := 1
+	for level := 1; level < enc.quoteLevel; level++ {
+		n *= 2
+	}
+	if n > 1 {
+		n++
+	}
+	if n > len(_esc) {
+		// TODO should pass this back as an encoding error
+		panic("quoting depth limit exceeded (only support up to 8 levels)")
+	}
+	enc.buf.AppendString(_esc[:n])
 	enc.buf.Write(seq)
 }
 
 func (enc *jsonEncoder) addQuote() {
-	enc.buf.AppendByte('"')
+	if enc.quoteLevel > 0 {
+		enc.addEscape('"')
+	} else {
+		enc.buf.AppendByte('"')
+	}
 }
 
 func (enc *jsonEncoder) addKey(key string) {
