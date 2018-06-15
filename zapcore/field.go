@@ -106,12 +106,18 @@ type Field struct {
 // useful to library authors, and shouldn't be necessary in most applications.
 func (f Field) AddTo(enc ObjectEncoder) {
 	var err error
+	err = f.addTo(enc)
+	if err != nil {
+		enc.AddString(fmt.Sprintf("%sError", f.Key), err.Error())
+	}
+}
 
+func (f Field) addTo(enc ObjectEncoder) error {
 	switch f.Type {
 	case ArrayMarshalerType:
-		err = enc.AddArray(f.Key, f.Interface.(ArrayMarshaler))
+		return enc.AddArray(f.Key, f.Interface.(ArrayMarshaler))
 	case ObjectMarshalerType:
-		err = enc.AddObject(f.Key, f.Interface.(ObjectMarshaler))
+		return enc.AddObject(f.Key, f.Interface.(ObjectMarshaler))
 	case BinaryType:
 		enc.AddBinary(f.Key, f.Interface.([]byte))
 	case BoolType:
@@ -156,7 +162,7 @@ func (f Field) AddTo(enc ObjectEncoder) {
 	case UintptrType:
 		enc.AddUintptr(f.Key, uintptr(f.Integer))
 	case ReflectType:
-		err = enc.AddReflected(f.Key, f.Interface)
+		return enc.AddReflected(f.Key, f.Interface)
 	case NamespaceType:
 		enc.OpenNamespace(f.Key)
 	case StringerType:
@@ -168,10 +174,7 @@ func (f Field) AddTo(enc ObjectEncoder) {
 	default:
 		panic(fmt.Sprintf("unknown field type: %v", f))
 	}
-
-	if err != nil {
-		enc.AddString(fmt.Sprintf("%sError", f.Key), err.Error())
-	}
+	return nil
 }
 
 // Equals returns whether two fields are equal. For non-primitive types such as
