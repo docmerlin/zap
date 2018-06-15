@@ -105,9 +105,7 @@ type Field struct {
 // AddTo exports a field through the ObjectEncoder interface. It's primarily
 // useful to library authors, and shouldn't be necessary in most applications.
 func (f Field) AddTo(enc ObjectEncoder) {
-	var err error
-	err = f.addTo(enc)
-	if err != nil {
+	if err := f.addTo(enc); err != nil {
 		enc.AddString(fmt.Sprintf("%sError", f.Key), err.Error())
 	}
 }
